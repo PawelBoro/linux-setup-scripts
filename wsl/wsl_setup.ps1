@@ -34,7 +34,7 @@ List of installation scopes. Valid values:
 - zsh: zsh shell with plugins
 .PARAMETER OmpTheme
 Specify to install oh-my-posh prompt theme engine and name of the theme to be used.
-You can specify one of the three included profiles: base, powerline, nerd,
+You can specify one of the three included profiles: base, pomp, powerline, nerd,
 or use any theme available on the page: https://ohmyposh.dev/docs/themes/
 .PARAMETER GtkTheme
 Specify gtk theme for wslg. Available values: light, dark.
