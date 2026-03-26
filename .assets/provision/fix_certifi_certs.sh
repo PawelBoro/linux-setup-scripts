@@ -2,6 +2,8 @@
 : '
 .assets/provision/fix_certifi_certs.sh
 '
+set -euo pipefail
+
 if [ $EUID -eq 0 ]; then
   printf '\e[31;1mDo not run the script as root.\e[0m\n' >&2
   exit 1
@@ -27,8 +29,8 @@ opensuse)
 esac
 
 # get list of installed certificates
-cert_paths=($(ls $CERT_PATH/*.crt 2>/dev/null))
-if [ -z "$cert_paths" ]; then
+mapfile -t cert_paths < <(ls "$CERT_PATH"/*.crt 2>/dev/null || true)
+if [ "${#cert_paths[@]}" -eq 0 ]; then
   exit 0
 fi
 
@@ -57,16 +59,16 @@ if [ -n "$SHOW" ]; then
 fi
 
 # exit script if no certify cacert.pem found
-if [ -z "$certify_paths" ]; then
+if [ "${#certify_paths[@]}" -eq 0 ]; then
   printf '\e[33mcertifi/cacert.pem not found\e[0m\n' >&2
   exit 0
 fi
 
 # iterate over certify files
-for certify in ${certify_paths[@]}; do
+for certify in "${certify_paths[@]}"; do
   echo "${certify//$HOME/\~}" >&2
   # iterate over installed certificates
-  for path in ${cert_paths[@]}; do
+  for path in "${cert_paths[@]}"; do
     serial=$(openssl x509 -in "$path" -noout -serial -nameopt RFC2253 | cut -d= -f2)
     if ! grep -qw "$serial" "$certify"; then
       # add certificate to array

@@ -19,17 +19,19 @@ Name of the WSL distro to set up. If not specified, script will update all exist
 .PARAMETER Scope
 List of installation scopes. Valid values:
 - az: azure-cli, azcopy, Az PowerShell module if pwsh scope specified; autoselects python scope
+- bun: Bun - all-in-one JavaScript, TypeScript & JSX toolkit using JavaScriptCore engine
 - conda: miniforge
 - distrobox: (WSL2 only) - podman and distrobox
 - docker: (WSL2 only) - docker, containerd buildx docker-compose
+- gcloud: google-cloud-cli
 - k8s_base: kubectl, kubelogin, k9s, kubecolor, kubectx, kubens
-- k8s_dev: argorollouts, cilium, helm, flux, kustomize cli tools
+- k8s_dev: argorollouts, cilium, hubble, helm, flux, kustomize and trivy cli tools; autoselects k8s_base scope
 - k8s_ext: (WSL2 only) - minikube, k3d, kind local kubernetes tools; autoselects docker, k8s_base and k8s_dev scopes
-- nodejs: Node.js JavaScript runtime environment
+- nodejs: Node.js JavaScript runtime environment using V8 engine
 - pwsh: PowerShell Core and corresponding PS modules; autoselects shell scope
 - python: uv, prek, pip, venv
 - rice: btop, cmatrix, cowsay, fastfetch
-- shell: bat, eza, oh-my-posh, ripgrep, yq
+- shell: bat, eza, oh-my-posh, ripgrep, yq, copilot-cli
 - terraform: terraform, terrascan, tflint, tfswitch
 - zsh: zsh shell with plugins
 .PARAMETER OmpTheme
@@ -58,8 +60,8 @@ wsl/wsl_setup.ps1 $Distro -FixNetwork -AddCertificate
 $Scope = @('conda', 'pwsh')
 $Scope = @('conda', 'k8s_ext', 'pwsh', 'rice')
 $Scope = @('az', 'docker', 'shell')
-$Scope = @('az', 'k8s_base', 'pwsh', 'nodejs', 'terraform')
-$Scope = @('az', 'k8s_ext', 'pwsh')
+$Scope = @('az', 'k8s_base', 'pwsh', 'bun', 'terraform')
+$Scope = @('az', 'gcloud', 'k8s_ext', 'pwsh')
 wsl/wsl_setup.ps1 $Distro -s $Scope
 wsl/wsl_setup.ps1 $Distro -s $Scope -AddCertificate
 # :set up shell with the specified oh-my-posh theme
@@ -92,8 +94,10 @@ param (
     [Alias('s')]
     [Parameter(ParameterSetName = 'Setup')]
     [Parameter(ParameterSetName = 'GitHub')]
-    [ValidateScript({ $_.ForEach({ $_ -in @('az', 'conda', 'distrobox', 'docker', 'k8s_base', 'k8s_dev', 'k8s_ext', 'nodejs', 'oh_my_posh', 'pwsh', 'python', 'rice', 'shell', 'terraform', 'zsh') }) -notcontains $false },
-        ErrorMessage = 'Wrong scope provided. Valid values: az conda distrobox docker k8s_base k8s_dev k8s_ext nodejs pwsh python rice shell terraform zsh')]
+    [ValidateScript(
+        { $_.ForEach({ $_ -in @('az', 'bun', 'conda', 'distrobox', 'docker', 'gcloud', 'k8s_base', 'k8s_dev', 'k8s_ext', 'nodejs', 'oh_my_posh', 'pwsh', 'python', 'rice', 'shell', 'terraform', 'zsh') }) -notcontains $false },
+        ErrorMessage = 'Wrong scope provided. Valid values: az conda distrobox docker gcloud k8s_base k8s_dev k8s_ext nodejs pwsh python rice shell terraform zsh')
+    ]
     [string[]]$Scope,
 
     [Parameter(ParameterSetName = 'Update')]
@@ -109,8 +113,10 @@ param (
     [string]$GtkTheme,
 
     [Parameter(Mandatory, ParameterSetName = 'GitHub')]
-    [ValidateScript({ $_.ForEach({ $_ -match '^[\w-]+/[\w-]+$' }) -notcontains $false },
-        ErrorMessage = 'Repos should be provided in "Owner/RepoName" format.')]
+    [ValidateScript(
+        { $_.ForEach({ $_ -match '^[\w-]+/[\w-]+$' }) -notcontains $false },
+        ErrorMessage = 'Repos should be provided in "Owner/RepoName" format.')
+    ]
     [string[]]$Repos,
 
     [Parameter(ParameterSetName = 'Setup')]
@@ -128,7 +134,7 @@ begin {
     $ErrorActionPreference = 'Stop'
     # check if the script is running on Windows
     if ($IsLinux) {
-        Show-LogContext 'This script is intended to be run on Windows only (outside of WSL).' -Level WARNING
+        Write-Warning 'This script is intended to be run on Windows only (outside of WSL).'
         exit 1
     }
 
@@ -142,7 +148,7 @@ begin {
     if (-not $SkipRepoUpdate) {
         Show-LogContext 'checking if the repository is up to date'
         if ((Update-GitRepository) -eq 2) {
-            Show-LogContext 'Run the script again!' -Level WARNING
+            Write-Warning 'Repository has been updated. Run the script again!'
             exit 0
         }
     }
@@ -158,16 +164,36 @@ begin {
             if ($Distro -in $onlineDistros.Name) {
                 Show-LogContext "specified distribution not found ($Distro), proceeding to install"
                 try {
-                    Get-Service LxssManagerUser*, WSLService | Out-Null
-                    wsl.exe --install --distribution $Distro --web-download --no-launch
+                    Get-Service WSLService | Out-Null
+                    wsl.exe --install --distribution $Distro --no-launch
+                    if ($? -and $Distro -notin (Get-WslDistro -FromRegistry).Name) {
+                        Write-Host "`nSetting up user profile in WSL distro. Type 'exit' when finished to proceed with WSL setup!`n" -ForegroundColor Yellow
+                        wsl.exe --install --distribution $Distro
+                    }
+                    if (-not $?) {
+                        Show-LogContext "`"$Distro`" distro installation failed." -Level ERROR
+                        exit 1
+                    }
                 } catch {
                     if (Test-IsAdmin) {
-                        wsl.exe --install --distribution $Distro --web-download
-                        Show-LogContext 'WSL service installation finished.'
-                        Show-LogContext "`nRestart the system and run the script again to install the specified WSL distro!`n" -Level WARNING
+                        wsl.exe --install --distribution $Distro
+                        if ($?) {
+                            Show-LogContext 'WSL service installation finished.'
+                            Show-LogContext "`nRestart the system and run the script again to install the specified WSL distro!`n" -Level WARNING
+                        } else {
+                            Show-LogContext 'WSL service installation failed.' -Level ERROR
+                            exit 1
+                        }
                     } else {
-                        Start-Process pwsh.exe "-NoProfile -Command `"$cmd`"" -Verb RunAs
-                        Show-LogContext "`nWSL service installing. Wait for the process to finish and restart the system!`n" -Level WARNING
+                        Show-LogContext "`nInstalling WSL service. Wait for the process to finish and restart the system!`n" -Level WARNING
+                        Start-Process pwsh.exe "-NoProfile -Command `"wsl.exe --install --distribution $Distro`"" -Verb RunAs
+                        if ($?) {
+                            Show-LogContext 'WSL service installation finished.'
+                            Show-LogContext "`nRestart the system and run the script again to install the specified WSL distro!`n" -Level WARNING
+                        } else {
+                            Show-LogContext 'WSL service installation failed.' -Level ERROR
+                            exit 1
+                        }
                     }
                     exit 0
                 }
@@ -211,7 +237,7 @@ begin {
                         break
                     }
                 }
-                wsl.exe --install --distribution $Distro --web-download --no-launch
+                wsl.exe --install --distribution $Distro --no-launch
             }
         }
         Show-LogContext 'getting GitHub authentication config from the default distro'
@@ -238,12 +264,12 @@ begin {
         $GtkTheme = $systemUsesLightTheme ? 'light' : 'dark'
     }
 
-    # script variable that determines if public SSH key has been added to GitHub
+    # *set script variables
     $script:sshStatus = @{ 'sshKey' = 'missing' }
-
+    $script:pwshEnvSet = $true
     # sets to track success and failed distros
-    $successDistros = [System.Collections.Generic.SortedSet[string]]::new()
-    $failDistros = [System.Collections.Generic.SortedSet[string]]::new()
+    $script:successDistros = [System.Collections.Generic.SortedSet[string]]::new()
+    $script:failDistros = [System.Collections.Generic.SortedSet[string]]::new()
 }
 
 process {
@@ -251,7 +277,7 @@ process {
         $Distro = $lx.Name
 
         #region distro checks
-        $chkStr = wsl.exe -d $Distro --exec .assets/provision/distro_check.sh
+        $chkStr = wsl.exe -d $Distro --exec .assets/provision/check_distro.sh
         try {
             $chk = $chkStr | ConvertFrom-Json -AsHashtable -ErrorAction Stop
         } catch {
@@ -265,8 +291,17 @@ process {
             if ($chk.def_uid -ge 1000) {
                 Write-Host "`nSetting up user profile in WSL distro. Type 'exit' when finished to proceed with WSL setup!`n" -ForegroundColor Yellow
                 wsl.exe --distribution $Distro
-                # rerun distro_check to get updated user
-                $chk = wsl.exe -d $Distro --exec .assets/provision/distro_check.sh | ConvertFrom-Json -AsHashtable
+                # rerun check_distro to get updated user
+                $chkStr = wsl.exe -d $Distro --exec .assets/provision/check_distro.sh
+                try {
+                    $chk = $chkStr | ConvertFrom-Json -AsHashtable -ErrorAction Stop
+                } catch {
+                    Show-LogContext $_
+                    Show-LogContext "Failed to check the distro '$Distro'." -Level WARNING
+                    Write-Host "`nThe WSL seems to be not responding correctly. Run the script again!"
+                    Write-Host 'If the problem persists, run the wsl/wsl_restart.ps1 script as administrator and try again.'
+                    exit 1
+                }
             } else {
                 $msg = [string]::Join("`n",
                     "`n`e[93;1mWARNING: The '$Distro' WSL distro is set to use the root user.`e[0m`n",
@@ -285,7 +320,9 @@ process {
         # *determine additional scopes from distro check
         switch ($chk) {
             { $_.az } { $scopeSet.Add('az') | Out-Null }
+            { $_.bun } { $scopeSet.Add('bun') | Out-Null }
             { $_.conda } { $scopeSet.Add('conda') | Out-Null }
+            { $_.gcloud } { $scopeSet.Add('gcloud') | Out-Null }
             { $_.k8s_base } { $scopeSet.Add('k8s_base') | Out-Null }
             { $_.k8s_dev } { $scopeSet.Add('k8s_dev') | Out-Null }
             { $_.k8s_ext } { $scopeSet.Add('k8s_ext') | Out-Null }
@@ -297,6 +334,7 @@ process {
         # add corresponding scopes
         switch (@($scopeSet)) {
             az { $scopeSet.Add('python') | Out-Null }
+            k8s_dev { $scopeSet.Add('k8s_base') | Out-Null }
             k8s_ext { @('docker', 'k8s_base', 'k8s_dev').ForEach({ $scopeSet.Add($_) | Out-Null }) }
             pwsh { $scopeSet.Add('shell') | Out-Null }
             zsh { $scopeSet.Add('shell') | Out-Null }
@@ -323,15 +361,17 @@ process {
                 'python' { 5 }
                 'conda' { 6 }
                 'az' { 7 }
-                'nodejs' { 8 }
-                'terraform' { 9 }
-                'oh_my_posh' { 10 }
-                'shell' { 11 }
-                'zsh' { 12 }
-                'pwsh' { 13 }
-                'distrobox' { 14 }
-                'rice' { 15 }
-                default { 16 }
+                'gcloud' { 8 }
+                'bun' { 9 }
+                'nodejs' { 10 }
+                'terraform' { 11 }
+                'oh_my_posh' { 12 }
+                'shell' { 13 }
+                'zsh' { 14 }
+                'pwsh' { 15 }
+                'distrobox' { 16 }
+                'rice' { 17 }
+                default { 18 }
             }
         }
         # display distro name and installed scopes
@@ -340,25 +380,44 @@ process {
 
         #region perform base setup
         # *fix WSL networking
-        if ($FixNetwork) {
+        $dnsOk = wsl.exe --distribution $Distro --exec .assets/provision/check_dns.sh
+        if (-not $PSBoundParameters.FixNetwork -and $dnsOk -eq 'false') {
+            $PSBoundParameters['FixNetwork'] = $FixNetwork = [System.Management.Automation.SwitchParameter]::new($true)
+        }
+        if ($PSBoundParameters.FixNetwork) {
             Show-LogContext 'fixing network'
             wsl/wsl_network_fix.ps1 $Distro
+            $dnsOk = wsl.exe --distribution $Distro --exec .assets/provision/check_dns.sh
+        }
+        if ($dnsOk -eq 'false') {
+            Show-LogContext 'DNS resolution failed. Cannot resolve github.com from WSL. Script execution halted.' -Level ERROR
+            exit 1
         }
 
         # *install certificates
-        if ($AddCertificate) {
+        $sslOk = wsl.exe --distribution $Distro --user root --exec .assets/provision/check_ssl.sh
+        if (-not $PSBoundParameters.AddCertificate -and $sslOk -ne 'true') {
+            $PSBoundParameters['AddCertificate'] = $AddCertificate = [System.Management.Automation.SwitchParameter]::new($true)
+        }
+        if ($PSBoundParameters.AddCertificate) {
             Show-LogContext 'adding certificates in chain'
             wsl/wsl_certs_add.ps1 $Distro
+            $sslOk = wsl.exe --distribution $Distro --user root --exec .assets/provision/check_ssl.sh
+        }
+        if ($sslOk -eq 'false') {
+            Show-LogContext 'SSL certificate problem: self-signed certificate in certificate chain. Script execution halted.' -Level ERROR
+            exit 1
         }
 
         # *install packages
         Show-LogContext 'updating system'
+        wsl.exe --distribution $Distro --user root --exec .assets/provision/fix_no_file.sh
         wsl.exe --distribution $Distro --user root --exec .assets/provision/fix_secure_path.sh
         wsl.exe --distribution $Distro --user root --exec .assets/provision/upgrade_system.sh
         wsl.exe --distribution $Distro --user root --exec .assets/provision/install_base.sh $chk.user
-        if (wsl.exe --distribution $Distro -- bash -c 'curl https://www.google.com 2>&1 | grep -q "(60) SSL certificate problem" && echo 1') {
-            Show-LogContext 'SSL certificate problem: self-signed certificate in certificate chain. Script execution halted.' -Level WARNING
-            exit
+        if ($PsCmdlet.ParameterSetName -eq 'Update' -and $chk.pixi) {
+            Show-LogContext 'updating pixi packages'
+            wsl.exe --distribution $Distro --cd ~ --exec .pixi/bin/pixi global update
         }
 
         # *boot setup
@@ -368,7 +427,7 @@ process {
         }
         #endregion
 
-        #region setup GitHub authentication
+        #region setup GitHub
         # *setup GitHub CLI
         wsl.exe --distribution $Distro --user root --exec .assets/provision/install_gh.sh
         $cmdArgs = [System.Collections.Generic.List[string]]::new([string[]]@('-u', $chk.user))
@@ -452,9 +511,15 @@ process {
                 $rel_azcopy = wsl.exe --distribution $Distro --user root --exec .assets/provision/install_azcopy.sh $Script:rel_azcopy
                 continue
             }
+            bun {
+                Show-LogContext 'installing bun'
+                wsl.exe --distribution $Distro --exec .assets/provision/install_bun.sh
+                continue
+            }
             conda {
-                Show-LogContext 'installing miniforge conda'
+                Show-LogContext 'installing conda tools'
                 wsl.exe --distribution $Distro --exec .assets/provision/install_miniforge.sh --fix_certify true
+                wsl.exe --distribution $Distro --exec .assets/provision/install_pixi.sh
                 continue
             }
             distrobox {
@@ -473,6 +538,12 @@ process {
                 wsl.exe --distribution $Distro --user root --exec .assets/provision/install_docker.sh $chk.user
                 continue
             }
+            gcloud {
+                Show-LogContext 'installing google-cloud-cli'
+                $rel_gcloud = wsl.exe --distribution $Distro --user root --exec .assets/provision/install_gcloud.sh $Script:rel_gcloud
+                wsl.exe --distribution $Distro --user root --exec .assets/provision/fix_gcloud_certs.sh
+                continue
+            }
             k8s_base {
                 Show-LogContext 'installing kubernetes base packages'
                 $rel_kubectl = wsl.exe --distribution $Distro --user root --exec .assets/provision/install_kubectl.sh $Script:rel_kubectl && $($chk.k8s_base = $true)
@@ -488,14 +559,21 @@ process {
                 $rel_cilium = wsl.exe --distribution $Distro --user root --exec .assets/provision/install_cilium.sh $Script:rel_cilium
                 $rel_flux = wsl.exe --distribution $Distro --user root --exec .assets/provision/install_flux.sh $Script:rel_flux
                 $rel_helm = wsl.exe --distribution $Distro --user root --exec .assets/provision/install_helm.sh $Script:rel_helm
+                $rel_hubble = wsl.exe --distribution $Distro --user root --exec .assets/provision/install_hubble.sh $Script:rel_hubble
                 $rel_kustomize = wsl.exe --distribution $Distro --user root --exec .assets/provision/install_kustomize.sh $Script:rel_kustomize
+                $rel_trivy = wsl.exe --distribution $Distro --user root --exec .assets/provision/install_trivy.sh $Script:rel_trivy
                 continue
             }
             k8s_ext {
-                Show-LogContext 'installing local kubernetes tools'
-                $rel_minikube = wsl.exe --distribution $Distro --user root --exec .assets/provision/install_minikube.sh $Script:rel_minikube
-                $rel_k3d = wsl.exe --distribution $Distro --user root --exec .assets/provision/install_k3d.sh $Script:rel_k3d
-                $rel_kind = wsl.exe --distribution $Distro --user root --exec .assets/provision/install_kind.sh $Script:rel_kind
+                wsl.exe --distribution $Distro --exec sh -c '[ -f /usr/bin/docker ] && true || false'
+                if ($?) {
+                    Show-LogContext 'installing local kubernetes tools'
+                    $rel_minikube = wsl.exe --distribution $Distro --user root --exec .assets/provision/install_minikube.sh $Script:rel_minikube
+                    $rel_k3d = wsl.exe --distribution $Distro --user root --exec .assets/provision/install_k3d.sh $Script:rel_k3d
+                    $rel_kind = wsl.exe --distribution $Distro --user root --exec .assets/provision/install_kind.sh $Script:rel_kind
+                } else {
+                    Show-LogContext 'docker not found, skipping local kubernetes tools installation' -Level WARNING
+                }
                 continue
             }
             nodejs {
@@ -560,6 +638,23 @@ process {
                     )
                     wsl.exe --distribution $Distro -- pwsh -nop -c $cmd
                 }
+                # *set persistent environment variables for pwsh
+                if ($pwshEnvSet) {
+                    $envVars = @{
+                        POWERSHELL_TELEMETRY_OPTOUT = '1'
+                        POWERSHELL_UPDATECHECK      = 'Off'
+                    }
+                    foreach ($key in $envVars.Keys) {
+                        if ([System.Environment]::GetEnvironmentVariable($key, 'User') -ne $envVars[$key]) {
+                            [System.Environment]::SetEnvironmentVariable($key, $envVars[$key], 'User')
+                        }
+                        $wslEnv = [System.Environment]::GetEnvironmentVariable('WSLENV', 'User')
+                        if ($wslEnv -notmatch "\b$key\b") {
+                            [System.Environment]::SetEnvironmentVariable('WSLENV', "${wslEnv}$($wslEnv ? ':' : '')${key}/u", 'User')
+                        }
+                    }
+                    $pwshEnvSet = $false
+                }
                 continue
             }
             python {
@@ -589,6 +684,9 @@ process {
                 wsl.exe --distribution $Distro --user root --exec .assets/provision/setup_profile_allusers.sh $chk.user
                 Show-LogContext 'setting up profile for current user'
                 wsl.exe --distribution $Distro --exec .assets/provision/setup_profile_user.sh
+                # install copilot-cli
+                Show-LogContext 'installing copilot-cli'
+                wsl.exe --distribution $Distro --exec .assets/provision/install_copilot.sh
                 continue
             }
             terraform {
@@ -604,7 +702,7 @@ process {
                 wsl.exe --distribution $Distro --user root --exec .assets/provision/install_zsh.sh
                 # setup profiles
                 Show-LogContext 'setting up zsh profile for current user'
-                wsl.exe --distribution $Distro --exec .assets/provision/setup_profile_user_zsh.sh
+                wsl.exe --distribution $Distro --exec .assets/provision/setup_profile_user.zsh
                 continue
             }
         }

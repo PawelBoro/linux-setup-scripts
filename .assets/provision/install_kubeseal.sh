@@ -2,6 +2,8 @@
 : '
 sudo .assets/provision/install_kubeseal.sh >/dev/null
 '
+set -euo pipefail
+
 if [ $EUID -ne 0 ]; then
   printf '\e[31;1mRun the script as root.\e[0m\n' >&2
   exit 1
@@ -12,8 +14,8 @@ fi
 
 # define variables
 APP='kubeseal'
-REL=$1
-URL=$2
+REL=${1:-}
+URL=${2:-}
 # get latest release if not provided as a parameter
 if [ -z "$REL" ]; then
   response="$(get_gh_release_latest --owner 'bitnami-labs' --repo 'sealed-secrets' --regex '^kubeseal-.+-linux-amd64.tar.gz$')"
@@ -24,10 +26,10 @@ elif [ -z "$URL" ]; then
   printf "\e[31mError: The download URL is required.\e[0m\n" >&2
   exit 1
 else
-  response="{\"version\":\"$REL\",\"download_url\":\"$URL\"}"
+  response=$(printf '{"version":"%s","download_url":"%s"}' "$REL" "$URL")
 fi
 # return json response
-echo $response
+echo "$response"
 
 # exit if the URL is not set
 if [ -z "$URL" ]; then
@@ -45,11 +47,10 @@ fi
 
 printf "\e[92minstalling \e[1m$APP\e[22m v$REL\e[0m\n" >&2
 # create temporary dir for the downloaded binary
-TMP_DIR=$(mktemp -dp "$HOME")
+TMP_DIR=$(mktemp -d -p "$HOME")
+trap 'rm -fr "$TMP_DIR"' EXIT
 # download and install file
 if download_file --uri "$URL" --target_dir "$TMP_DIR"; then
   tar -zxf "$TMP_DIR/$(basename $URL)" -C "$TMP_DIR"
   install -m 0755 "$TMP_DIR/$APP" /usr/local/bin/
 fi
-# remove temporary dir
-rm -fr "$TMP_DIR"

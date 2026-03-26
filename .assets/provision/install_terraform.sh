@@ -2,6 +2,8 @@
 : '
 sudo .assets/provision/install_terraform.sh >/dev/null
 '
+set -euo pipefail
+
 if [ $EUID -ne 0 ]; then
   printf '\e[31;1mRun the script as root.\e[0m\n' >&2
   exit 1
@@ -30,7 +32,7 @@ esac
 . .assets/provision/source.sh
 
 # define variables
-REL=$1
+REL=${1:-}
 # get latest release if not provided as a parameter
 if [ -z "$REL" ]; then
   REL="$(get_gh_release_latest --owner 'hashicorp' --repo 'terraform')"
@@ -56,17 +58,21 @@ arch)
   pacman -Sy --needed --noconfirm terraform >&2 2>/dev/null
   ;;
 fedora)
-  dnf config-manager addrepo --from-repofile=https://rpm.releases.hashicorp.com/fedora/hashicorp.repo >&2 2>/dev/null
+  if [ "$(readlink "$(which dnf)")" = 'dnf5' ]; then
+    dnf config-manager addrepo --from-repofile https://rpm.releases.hashicorp.com/fedora/hashicorp.repo
+  else
+    dnf config-manager --add-repo https://rpm.releases.hashicorp.com/RHEL/hashicorp.repo
+  fi
   dnf -y install terraform
   ;;
 debian | ubuntu)
   export DEBIAN_FRONTEND=noninteractive
-  wget -O- https://apt.releases.hashicorp.com/gpg 2>/dev/null | gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
+  curl -fsSL https://apt.releases.hashicorp.com/gpg 2>/dev/null | gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
   gpg --no-default-keyring --keyring /usr/share/keyrings/hashicorp-archive-keyring.gpg --fingerprint 2>/dev/null
   echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" >/etc/apt/sources.list.d/hashicorp.list
   apt-get update && apt-get install terraform
   ;;
 opensuse)
-  zypper in -y terraform >&2 2>/dev/null
+  zypper --non-interactive in -y terraform >&2 2>/dev/null
   ;;
 esac

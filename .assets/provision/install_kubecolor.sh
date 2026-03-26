@@ -2,6 +2,8 @@
 : '
 sudo .assets/provision/install_kubecolor.sh >/dev/null
 '
+set -euo pipefail
+
 if [ $EUID -ne 0 ]; then
   printf '\e[31;1mRun the script as root.\e[0m\n' >&2
   exit 1
@@ -9,6 +11,8 @@ fi
 
 # determine system id
 SYS_ID="$(sed -En '/^ID.*(alpine|arch|fedora|debian|ubuntu|opensuse).*/{s//\1/;p;q}' /etc/os-release)"
+# set binary flag if package manager is not supported
+binary=false
 # check if package installed already using package manager
 APP='kubecolor'
 case $SYS_ID in
@@ -27,7 +31,7 @@ esac
 . .assets/provision/source.sh
 
 # define variables
-REL=$1
+REL=${1:-}
 # get latest release if not provided as a parameter
 if [ -z "$REL" ]; then
   REL="$(get_gh_release_latest --owner 'kubecolor' --repo 'kubecolor')"
@@ -50,12 +54,17 @@ fi
 printf "\e[92minstalling \e[1m$APP\e[22m v$REL\e[0m\n" >&2
 case $SYS_ID in
 fedora)
-  dnf config-manager addrepo --from-repofile https://kubecolor.github.io/packages/rpm/kubecolor.repo &>/dev/null
+  if [ "$(readlink "$(which dnf)")" = 'dnf5' ]; then
+    dnf config-manager addrepo --from-repofile https://kubecolor.github.io/packages/rpm/kubecolor.repo
+  else
+    dnf config-manager --add-repo https://kubecolor.github.io/packages/rpm/kubecolor.repo
+  fi
   dnf install -y kubecolor >&2 2>/dev/null
   ;;
 opensuse)
-  sudo zypper addrepo https://kubecolor.github.io/packages/rpm/kubecolor.repo &>/dev/null
-  zypper in -y $APP >&2 2>/dev/null
+  zypper --non-interactive --quiet addrepo --no-check https://kubecolor.github.io/packages/rpm/kubecolor.repo
+  zypper --gpg-auto-import-keys --quiet refresh $APP
+  zypper --non-interactive install -y $APP >&2 2>/dev/null
   ;;
 *)
   binary=true
@@ -65,7 +74,8 @@ esac
 if [ "$binary" = true ] && [ -n "$REL" ]; then
   printf "Installing $APP \e[1mv$REL\e[22m from binary.\n" >&2
   # create temporary dir for the downloaded binary
-  TMP_DIR=$(mktemp -dp "$HOME")
+  TMP_DIR=$(mktemp -d -p "$HOME")
+  trap 'rm -fr "$TMP_DIR"' EXIT
   # calculate download uri
   if [[ "$SYS_ID" =~ ^(debian|ubuntu)$ ]]; then
     asset="kubecolor_${REL}_linux_amd64.deb"
@@ -82,6 +92,4 @@ if [ "$binary" = true ] && [ -n "$REL" ]; then
       install -m 0755 "$TMP_DIR/kubecolor" /usr/bin/
     fi
   fi
-  # remove temporary dir
-  rm -fr "$TMP_DIR"
 fi

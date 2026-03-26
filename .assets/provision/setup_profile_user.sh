@@ -2,6 +2,8 @@
 : '
 .assets/provision/setup_profile_user.sh
 '
+set -euo pipefail
+
 # path variables
 PROFILE_PATH='/etc/profile.d'
 OMP_PATH='/usr/local/share/oh-my-posh'
@@ -50,33 +52,43 @@ fi
 EOF
 fi
 
-# add gh copilot aliases
-if gh extension list 2>/dev/null | grep -qF 'github/gh-copilot'; then
-  mkdir -p "$HOME/.bashrc.d" >/dev/null
-  gh copilot alias -- bash >"$HOME/.bashrc.d/aliases_gh_copilot.sh"
-  if ! grep -qF 'd/aliases_gh_copilot.sh' $HOME/.bashrc 2>/dev/null; then
-    cat <<EOF >>$HOME/.bashrc
-# gh copilot aliases
-if [ -f "$HOME/.bashrc.d/aliases_gh_copilot.sh" ]; then
-  source "$HOME/.bashrc.d/aliases_gh_copilot.sh"
-fi
-EOF
-  fi
-fi
-
 # *add conda initialization
 if ! grep -qw '__conda_setup' $HOME/.bashrc 2>/dev/null && [ -f $HOME/miniforge3/bin/conda ]; then
   $HOME/miniforge3/bin/conda init bash >/dev/null
 fi
 
 # *set up uv
-if ! grep -qw 'uv generate-shell-completion' $HOME/.bashrc 2>/dev/null && [ -x $HOME/.local/bin/uv ]; then
+COMPLETION_CMD='uv generate-shell-completion bash'
+UV_PATH=".local/bin"
+if ! grep -qw "$COMPLETION_CMD" $HOME/.bashrc 2>/dev/null && [ -x "$HOME/$UV_PATH/uv" ]; then
   cat <<EOF >>$HOME/.bashrc
 
 # initialize uv autocompletion
-if [ -x "$HOME/.local/bin/uv" ]; then
+if [ -x "\$HOME/$UV_PATH/uv" ]; then
   export UV_NATIVE_TLS=true
-  eval "\$(uv generate-shell-completion bash)"
+  eval "\$(\$HOME/$UV_PATH/$COMPLETION_CMD)"
+fi
+EOF
+fi
+
+# *set Makefile completer
+if ! grep -qw "Makefile" $HOME/.bashrc 2>/dev/null; then
+  cat <<'EOF' >>$HOME/.bashrc
+
+# initialize make autocompletion
+complete -W "\`if [ -f Makefile ]; then grep -oE '^[a-zA-Z0-9_-]+:([^=]|$)' Makefile | sed 's/[^a-zA-Z0-9_-]*$//'; elif [ -f makefile ]; then grep -oE '^[a-zA-Z0-9_-]+:([^=]|$)' makefile | sed 's/[^a-zA-Z0-9_-]*$//'; fi \`" make
+EOF
+fi
+
+# *set up pixi
+COMPLETION_CMD='pixi completion --shell bash'
+PIXI_PATH=".pixi/bin"
+if ! grep -qw "$COMPLETION_CMD" $HOME/.bashrc 2>/dev/null && [ -x "$HOME/$PIXI_PATH/pixi" ]; then
+  cat <<EOF >>$HOME/.bashrc
+
+# initialize pixi autocompletion
+if [ -x "\$HOME/$PIXI_PATH/pixi" ]; then
+  eval "\$(\$HOME/$PIXI_PATH/$COMPLETION_CMD)"
 fi
 EOF
 fi

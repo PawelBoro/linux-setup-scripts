@@ -2,6 +2,8 @@
 : '
 .assets/provision/fix_azcli_certs.sh
 '
+set -euo pipefail
+
 if [ $EUID -eq 0 ]; then
   printf '\e[31;1mDo not run the script as root.\e[0m\n' >&2
   exit 1
@@ -26,8 +28,8 @@ debian | ubuntu)
 esac
 
 # get list of installed certificates
-cert_paths=($(ls $CERT_PATH/*.crt 2>/dev/null))
-if [ -z "$cert_paths" ]; then
+mapfile -t cert_paths < <(ls "$CERT_PATH"/*.crt 2>/dev/null || true)
+if [ "${#cert_paths[@]}" -eq 0 ]; then
   printf '\nThere are no certificate(s) to install.\n' >&2
   exit 0
 fi
@@ -45,17 +47,35 @@ if [ -z "$CERTIFY_CRT" ]; then
   fi
 fi
 
-for path in ${cert_paths[@]}; do
+# instantiate variable about number of certificates added
+cert_count=0
+# track unique serials that have been added across all certify files
+declare -A added_serials=()
+# iterate over certify files
+for path in "${cert_paths[@]}"; do
   serial=$(openssl x509 -in "$path" -noout -serial -nameopt RFC2253 | cut -d= -f2)
   if ! grep -qw "$serial" "$CERTIFY_CRT"; then
     echo "$(openssl x509 -in $path -noout -subject -nameopt RFC2253 | sed 's/\\//g')" >&2
     CERT="
 $(openssl x509 -in $path -noout -issuer -subject -serial -fingerprint -nameopt RFC2253 | sed 's/\\//g' | xargs -I {} echo "# {}")
 $(openssl x509 -in $path -outform PEM)"
+
     if [ -w "$CERTIFY_CRT" ]; then
       echo "$CERT" >>"$CERTIFY_CRT"
     else
       echo "$CERT" | sudo tee -a "$CERTIFY_CRT" >/dev/null
     fi
+    # increment unique certificate count only once per serial
+    if [ -z "${added_serials[$serial]+x}" ]; then
+      added_serials[$serial]=1
+      cert_count=$((cert_count + 1))
+    fi
   fi
 done
+
+# print summary of added certificates
+if [ $cert_count -gt 0 ]; then
+  printf "\e[34madded $cert_count certificate(s) to azure-cli certifi bundle\e[0m\n" >&2
+else
+  printf '\e[34mno new certificates to add to azure-cli certifi bundle\e[0m\n' >&2
+fi

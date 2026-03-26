@@ -2,13 +2,15 @@
 : '
 sudo .assets/provision/setup_profile_allusers.sh $(id -un)
 '
+set -euo pipefail
+
 if [ $EUID -ne 0 ]; then
   printf '\e[31;1mRun the script as root.\e[0m\n' >&2
   exit 1
 fi
 
 # check if specified user exists
-user=${1:-$(id -un 1000 2>/dev/null)}
+user=${1:-$(id -un 1000 2>/dev/null || true)}
 if ! sudo -u $user true 2>/dev/null; then
   if [ -n "$user" ]; then
     printf "\e[31;1mUser does not exist ($user).\e[0m\n"
@@ -83,7 +85,7 @@ grep -qw 'completion-ignore-case' /etc/inputrc || echo 'set completion-ignore-ca
 [ -f /etc/localtime ] || ln -s /usr/share/zoneinfo/UTC /etc/localtime
 
 # *add reboot/shutdown polkit rule for vagrant group
-if grep -qw '^vagrant' <<<$(getent group) && [[ ! -f /usr/share/polkit-1/rules.d/49-nopasswd_shutdown.rules && -d /usr/share/polkit-1/rules.d ]]; then
+if grep -qw '^vagrant' <<<"$(getent group)" && [[ ! -f /usr/share/polkit-1/rules.d/49-nopasswd_shutdown.rules && -d /usr/share/polkit-1/rules.d ]]; then
   cat <<EOF >/usr/share/polkit-1/rules.d/49-nopasswd_shutdown.rules
 /* Allow members of the vagrant group to shutdown or restart
  * without password authentication.

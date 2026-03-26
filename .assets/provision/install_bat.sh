@@ -2,6 +2,8 @@
 : '
 sudo .assets/provision/install_bat.sh >/dev/null
 '
+set -euo pipefail
+
 if [ $EUID -ne 0 ]; then
   printf '\e[31;1mRun the script as root.\e[0m\n' >&2
   exit 1
@@ -9,6 +11,8 @@ fi
 
 # determine system id
 SYS_ID="$(sed -En '/^ID.*(alpine|arch|fedora|debian|ubuntu|opensuse).*/{s//\1/;p;q}' /etc/os-release)"
+# set binary flag if package manager is not supported
+binary=false
 # check if package installed already using package manager
 APP='bat'
 case $SYS_ID in
@@ -30,7 +34,7 @@ esac
 . .assets/provision/source.sh
 
 # define variables
-REL=$1
+REL=${1:-}
 # get latest release if not provided as a parameter
 if [ -z "$REL" ]; then
   REL="$(get_gh_release_latest --owner 'sharkdp' --repo 'bat')"
@@ -70,7 +74,7 @@ debian | ubuntu)
   fi
   ;;
 opensuse)
-  zypper in -y $APP >&2 2>/dev/null || binary=true
+  zypper --non-interactive in -y $APP >&2 2>/dev/null || binary=true
   ;;
 *)
   binary=true
@@ -80,7 +84,8 @@ esac
 if [ "$binary" = true ]; then
   echo 'Installing from binary.' >&2
   # create temporary dir for the downloaded binary
-  TMP_DIR=$(mktemp -dp "$HOME")
+  TMP_DIR=$(mktemp -d -p "$HOME")
+  trap 'rm -fr "$TMP_DIR"' EXIT
   # calculate download uri
   URL="https://github.com/sharkdp/bat/releases/download/v${REL}/bat-v${REL}-x86_64-unknown-linux-gnu.tar.gz"
   # download and install file
@@ -90,6 +95,4 @@ if [ "$binary" = true ]; then
     install -m 0644 "$TMP_DIR/bat.1" "$(manpath | cut -d : -f 1)/man1/"
     install -m 0644 "$TMP_DIR/autocomplete/bat.bash" /etc/bash_completion.d/
   fi
-  # remove temporary dir
-  rm -fr "$TMP_DIR"
 fi

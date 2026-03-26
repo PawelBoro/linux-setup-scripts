@@ -44,9 +44,11 @@ if (-not $isWSL1) {
 # $env:PATH variable
 @(
     [IO.Path]::Combine($HOME, '.local', 'bin')
+    [IO.Path]::Combine($HOME, '.bun', 'bin')
     [IO.Path]::Combine($HOME, '.cargo', 'bin')
+    [IO.Path]::Combine($HOME, '.pixi', 'bin')
 ) | ForEach-Object {
-    if ((Test-Path $_) -and $_ -notin $env:PATH.Split([IO.Path]::PathSeparator)) {
+    if ((Test-Path $_ -PathType Container) -and $_ -notin $env:PATH.Split([IO.Path]::PathSeparator)) {
         [Environment]::SetEnvironmentVariable('PATH', [string]::Join([IO.Path]::PathSeparator, $_, $env:PATH))
     }
 }

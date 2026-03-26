@@ -2,6 +2,8 @@
 : '
 .assets/provision/setup_gnome.sh
 '
+set -euo pipefail
+
 
 # determine system id
 SYS_ID="$(sed -En '/^ID.*(arch|fedora|debian|ubuntu|opensuse).*/{s//\1/;p;q}' /etc/os-release)"
@@ -19,7 +21,7 @@ debian | ubuntu)
   sudo apt-get update && sudo apt-get install -y build-essential sassc
   ;;
 opensuse)
-  sudo zypper in -y -t pattern devel_basis
+  sudo zypper --non-interactive in -y -t pattern devel_basis
   INSTALL_DASH=false
   ;;
 *)

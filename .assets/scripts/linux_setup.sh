@@ -5,7 +5,7 @@
 # :set up the system using specified values
 scope="pwsh"
 scope="k8s_base pwsh python"
-scope="az docker k8s_base pwsh terraform nodejs"
+scope="az docker k8s_base pwsh terraform bun"
 scope="az distrobox k8s_ext rice pwsh"
 # :set up the system using the specified scope
 .assets/scripts/linux_setup.sh --scope "$scope"
@@ -19,6 +19,8 @@ omp_theme="nerd"
 # :skip GitHub authentication setup
 .assets/scripts/linux_setup.sh --skip_gh_auth true --scope "$scope" --omp_theme "$omp_theme"
 '
+set -e
+
 if [ $EUID -eq 0 ]; then
   printf '\e[31;1mDo not run the script as root.\e[0m\n'
   exit 1
@@ -44,20 +46,21 @@ SCRIPT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 pushd "$(cd "${SCRIPT_ROOT}/../../" && pwd)" >/dev/null
 
 # *Calculate and show installation scopes
-# run the distro_check.sh script and capture the output
-distro_check=$(.assets/provision/distro_check.sh array)
+# run the check_distro.sh script and capture the output
+distro_check=$(.assets/provision/check_distro.sh array)
 
 # initialize the scopes array
-array=($scope)
-# populate the scopes array based on the output of distro_check.sh
+read -ra array <<<"$scope"
+# populate the scopes array based on the output of check_distro.sh
 while IFS= read -r line; do
   array+=("$line")
 done <<<"$distro_check"
 # add corresponding scopes
-grep -qw 'az' <<<${array[@]} && array+=(python) || true
-grep -qw 'k8s_ext' <<<${array[@]} && array+=(docker) && array+=(k8s_base) && array+=(k8s_dev) || true
-grep -qw 'pwsh' <<<${array[@]} && array+=(shell) || true
-grep -qw 'zsh' <<<${array[@]} && array+=(shell) || true
+grep -qw 'az' <<<"${array[@]}" && array+=(python) || true
+grep -qw 'k8s_dev' <<<"${array[@]}" && array+=(k8s_base) || true
+grep -qw 'k8s_ext' <<<"${array[@]}" && array+=(docker) && array+=(k8s_base) && array+=(k8s_dev) || true
+grep -qw 'pwsh' <<<"${array[@]}" && array+=(shell) || true
+grep -qw 'zsh' <<<"${array[@]}" && array+=(shell) || true
 # add oh_my_posh scope if necessary
 if [[ -n "$omp_theme" || -f /usr/bin/oh-my-posh ]]; then
   array+=(oh_my_posh)
@@ -72,6 +75,8 @@ order=(
   python
   conda
   az
+  gcloud
+  bun
   nodejs
   terraform
   oh_my_posh
@@ -95,7 +100,7 @@ done
 # get distro name from os-release
 . /etc/os-release
 # display distro name and scopes to install
-printf "\e[95m$NAME$([ -n "$scope_arr" ] && echo " : \e[3m${scope_arr[*]}" || true)\e[0m\n"
+printf "\e[95m$NAME$([ "${#scope_arr[@]}" -gt 0 ] && echo " : \e[3m${scope_arr[*]}" || true)\e[0m\n"
 
 # *Install packages and setup profiles
 if [ "$sys_upgrade" = true ]; then
@@ -104,13 +109,18 @@ if [ "$sys_upgrade" = true ]; then
 fi
 printf "\e[96minstalling base packages...\e[0m\n"
 sudo .assets/provision/install_base.sh $user
+# update pixi packages if pixi is installed
+if grep -qw 'pixi' <<<"${array[@]}"; then
+  printf "\e[96mupdating pixi packages...\e[0m\n"
+  "$HOME/.pixi/bin/pixi" global update
+fi
 
 # *setup GitHub CLI
 if [ "$skip_gh_auth" = true ]; then
   printf "\e[32mSkipping gh installation and authentication setup.\e[0m\n" >&2
 else
   sudo .assets/provision/install_gh.sh
-  sudo .assets/provision/setup_gh_https.sh -u $user -k
+  sudo .assets/provision/setup_gh_https.sh -u $user -k >/dev/null
   # generate SSH key if not exists
   if ! ([ -f "$HOME/.ssh/id_ed25519" ] && [ -f "$HOME/.ssh/id_ed25519.pub" ]); then
     # prepare clean $HOME/.ssh directory
@@ -123,19 +133,24 @@ else
     ssh-keygen -t ed25519 -f "$HOME/.ssh/id_ed25519" -N "" -q
   fi
   # add SSH key to GitHub
-  .assets/provision/setup_gh_ssh.sh 1>/dev/null
+  .assets/provision/setup_gh_ssh.sh >/dev/null
 fi
 
-for sc in ${scope_arr[@]}; do
+for sc in "${scope_arr[@]}"; do
   case $sc in
   az)
     printf "\e[96minstalling azure cli...\e[0m\n"
     .assets/provision/install_azurecli_uv.sh --fix_certify true
-    sudo .assets/provision/install_azcopy.sh
+    sudo .assets/provision/install_azcopy.sh >/dev/null
+    ;;
+  bun)
+    printf "\e[96minstalling bun...\e[0m\n"
+    .assets/provision/install_bun.sh
     ;;
   conda)
     printf "\e[96minstalling python packages...\e[0m\n"
     .assets/provision/install_miniforge.sh --fix_certify true
+    .assets/provision/install_pixi.sh
     ;;
   distrobox)
     printf "\e[96minstalling distrobox...\e[0m\n"
@@ -145,6 +160,11 @@ for sc in ${scope_arr[@]}; do
   docker)
     printf "\e[96minstalling docker...\e[0m\n"
     sudo .assets/provision/install_docker.sh $user
+    ;;
+  gcloud)
+    printf "\e[96minstalling google-cloud-cli...\e[0m\n"
+    sudo .assets/provision/install_gcloud.sh >/dev/null
+    sudo .assets/provision/fix_gcloud_certs.sh
     ;;
   k8s_base)
     printf "\e[96minstalling kubernetes base packages...\e[0m\n"
@@ -158,9 +178,11 @@ for sc in ${scope_arr[@]}; do
     printf "\e[96minstalling kubernetes dev packages...\e[0m\n"
     sudo .assets/provision/install_argorolloutscli.sh >/dev/null
     sudo .assets/provision/install_cilium.sh >/dev/null
-    sudo .assets/provision/install_flux.sh
+    sudo .assets/provision/install_flux.sh >/dev/null
     sudo .assets/provision/install_helm.sh >/dev/null
-    sudo .assets/provision/install_kustomize.sh
+    sudo .assets/provision/install_hubble.sh >/dev/null
+    sudo .assets/provision/install_kustomize.sh >/dev/null
+    sudo .assets/provision/install_trivy.sh >/dev/null
     ;;
   k8s_ext)
     printf "\e[96minstalling local kubernetes tools...\e[0m\n"
@@ -170,7 +192,7 @@ for sc in ${scope_arr[@]}; do
     ;;
   nodejs)
     printf "\e[96minstalling Node.js...\e[0m\n"
-    sudo .assets/provision/install_nodejs.sh >/dev/null
+    sudo .assets/provision/install_nodejs.sh
     ;;
   oh_my_posh)
     printf "\e[96minstalling oh-my-posh...\e[0m\n"
@@ -190,35 +212,37 @@ for sc in ${scope_arr[@]}; do
   python)
     printf "\e[96minstalling python tools...\e[0m\n"
     sudo .assets/provision/setup_python.sh
-    .assets/provision/install_uv.sh
-    .assets/provision/install_prek.sh
+    .assets/provision/install_uv.sh >/dev/null
+    .assets/provision/install_prek.sh >/dev/null
     ;;
   rice)
     printf "\e[96mricing distro...\e[0m\n"
     sudo .assets/provision/install_btop.sh
     sudo .assets/provision/install_cmatrix.sh
     sudo .assets/provision/install_cowsay.sh
-    sudo .assets/provision/install_fastfetch.sh
+    sudo .assets/provision/install_fastfetch.sh >/dev/null
     ;;
   shell)
     printf "\e[96minstalling shell packages...\e[0m\n"
+    sudo .assets/provision/install_fzf.sh
     sudo .assets/provision/install_eza.sh >/dev/null
     sudo .assets/provision/install_bat.sh >/dev/null
     sudo .assets/provision/install_ripgrep.sh >/dev/null
     sudo .assets/provision/install_yq.sh >/dev/null
+    .assets/provision/install_copilot.sh
     ;;
   terraform)
     printf "\e[96minstalling terraform utils...\e[0m\n"
-    sudo .assets/provision/install_terraform.sh
-    sudo .assets/provision/install_terrascan.sh
-    sudo .assets/provision/install_tflint.sh
-    sudo .assets/provision/install_tfswitch.sh
+    sudo .assets/provision/install_terraform.sh >/dev/null
+    sudo .assets/provision/install_terrascan.sh >/dev/null
+    sudo .assets/provision/install_tflint.sh >/dev/null
+    sudo .assets/provision/install_tfswitch.sh >/dev/null
     ;;
   zsh)
     printf "\e[96minstalling zsh...\e[0m\n"
     sudo .assets/provision/install_zsh.sh
     printf "\e[96msetting up zsh profile for current user...\e[0m\n"
-    .assets/provision/setup_profile_user_zsh.sh
+    .assets/provision/setup_profile_user.zsh
     ;;
   esac
 done
@@ -230,7 +254,7 @@ printf "\e[96msetting up profile for current user...\e[0m\n"
 # install powershell modules
 if [ -f /usr/bin/pwsh ]; then
   cmnd="Import-Module (Resolve-Path './modules/InstallUtils'); Invoke-GhRepoClone -OrgRepo 'szymonos/ps-modules'"
-  cloned=$(pwsh -nop -c $cmnd)
+  cloned=$(pwsh -nop -c "$cmnd")
   if [ $cloned -gt 0 ]; then
     printf "\e[96minstalling ps-modules...\e[0m\n"
     # install do-common module for all users

@@ -2,7 +2,9 @@
 : '
 sudo .assets/provision/upgrade_system.sh
 '
-if [ $(id -u) -ne 0 ]; then
+set -eu
+
+if [ "$(id -u)" -ne 0 ]; then
   printf '\e[31;1mRun the script as root.\e[0m\n' >&2
   exit 1
 fi
@@ -29,6 +31,6 @@ debian | ubuntu)
   apt-get update && apt-get dist-upgrade -qy --allow-downgrades --allow-remove-essential --allow-change-held-packages
   ;;
 opensuse)
-  zypper refresh && zypper dup -y
+  zypper --gpg-auto-import-keys refresh && zypper --non-interactive dup -y
   ;;
 esac

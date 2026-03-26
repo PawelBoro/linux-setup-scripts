@@ -3,6 +3,8 @@
 .assets/provision/install_azurecli.sh
 .assets/provision/install_azurecli.sh --fix_certify true
 '
+set -euo pipefail
+
 if [ $EUID -eq 0 ]; then
   printf '\e[31;1mDo not run the script as root.\e[0m\n' >&2
   exit 1
@@ -13,7 +15,7 @@ fix_certify=${fix_certify:-false}
 while [ $# -gt 0 ]; do
   if [[ $1 == *"--"* ]]; then
     param="${1/--/}"
-    declare $param="$2"
+    declare $param="${2:-}"
   fi
   shift
 done
@@ -22,8 +24,7 @@ done
 [ -f "$HOME/miniforge3/bin/conda" ] || exit 0
 
 # >>> conda initialize >>>
-__conda_setup="$("$HOME/miniforge3/bin/conda" 'shell.bash' 'hook' 2>/dev/null)"
-if [ $? -eq 0 ]; then
+if __conda_setup="$("$HOME/miniforge3/bin/conda" 'shell.bash' 'hook' 2>/dev/null)"; then
   eval "$__conda_setup"
 else
   if [ -f "$HOME/miniforge3/etc/profile.d/conda.sh" ]; then
@@ -38,10 +39,10 @@ unset __conda_setup
 # install azure-cli in dedicated environment
 if ! conda env list | grep -qw '^azurecli'; then
   if uname -r 2>&1 | grep -qw 'WSL2'; then
-    conda create --name azurecli --yes python=3.12 pip
+    conda create --name azurecli --yes python=3.13 pip
   else
     # https://github.com/conda/conda/issues/12051
-    conda create --name azurecli --yes python=3.12 pip numpy==1.26.4 fonttools==4.53.0
+    conda create --name azurecli --yes python=3.13 pip numpy==1.26.4 fonttools==4.53.0
   fi
 fi
 conda activate azurecli

@@ -2,6 +2,8 @@
 : '
 sudo .assets/provision/install_edge.sh $(id -un)
 '
+set -euo pipefail
+
 if [ $EUID -ne 0 ]; then
   printf '\e[31;1mRun the script as root.\e[0m\n' >&2
   exit 1
@@ -13,7 +15,7 @@ SYS_ID="$(sed -En '/^ID.*(arch|fedora|debian|ubuntu|opensuse).*/{s//\1/;p;q}' /e
 case $SYS_ID in
 arch)
   if pacman -Qqe paru &>/dev/null; then
-    user=${1:-$(id -un 1000 2>/dev/null)}
+    user=${1:-$(id -un 1000 2>/dev/null || true)}
     if ! sudo -u $user true 2>/dev/null; then
       if [ -n "$user" ]; then
         printf "\e[31;1mUser does not exist ($user).\e[0m\n"
@@ -30,7 +32,11 @@ arch)
 fedora)
   rpm --import 'https://packages.microsoft.com/keys/microsoft.asc'
   if [ ! -f /etc/yum.repos.d/microsoft-edge-stable.repo ]; then
-    dnf config-manager addrepo --from-repofile='https://packages.microsoft.com/yumrepos/edge' >&2 2>/dev/null
+    if [ "$(readlink "$(which dnf)")" = 'dnf5' ]; then
+      dnf config-manager addrepo --from-repofile https://packages.microsoft.com/yumrepos/edge
+    else
+      dnf config-manager --add-repo https://packages.microsoft.com/yumrepos/edge
+    fi
     mv -f /etc/yum.repos.d/packages.microsoft.com_yumrepos_edge.repo /etc/yum.repos.d/microsoft-edge.repo
   fi
   dnf install -y microsoft-edge-stable
@@ -45,8 +51,8 @@ debian | ubuntu)
   ;;
 opensuse)
   rpm --import 'https://packages.microsoft.com/keys/microsoft.asc'
-  zypper addrepo https://packages.microsoft.com/yumrepos/edge microsoft-edge
-  zypper refresh
-  zypper install -y microsoft-edge-stable
+  zypper --non-interactive --quiet addrepo --no-check https://packages.microsoft.com/yumrepos/edge microsoft-edge
+  zypper --gpg-auto-import-keys --quiet refresh microsoft-edge
+  zypper --non-interactive install -y microsoft-edge-stable >&2 2>/dev/null
   ;;
 esac

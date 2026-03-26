@@ -15,3 +15,15 @@ repos:
       - id: mixed-line-ending
       - id: trailing-whitespace
         exclude: \.md$
+  - repo: https://github.com/DavidAnson/markdownlint-cli2
+    rev: v0.22.0
+    hooks:
+      - id: markdownlint-cli2
+        files: \.md$
+        exclude: /copilot-instructions\.md
+  - repo: https://github.com/koalaman/shellcheck-precommit
+    rev: v0.11.0
+    hooks:
+      - id: shellcheck
+        args: ["--severity=warning", "--exclude=SC1090,SC2139,SC2148,SC2155,SC2174"]
+        exclude: \.zsh$

@@ -17,17 +17,19 @@ Name of the WSL distro to install and set up.
 .PARAMETER Scope
 List of installation scopes. Valid values:
 - az: azure-cli, azcopy, Az PowerShell module if pwsh scope specified; autoselects python scope
+- bun: Bun - all-in-one JavaScript, TypeScript & JSX toolkit using JavaScriptCore engine
 - conda: miniforge
 - distrobox: (WSL2 only) - podman and distrobox
 - docker: (WSL2 only) - docker, containerd buildx docker-compose
+- gcloud: google-cloud-cli
 - k8s_base: kubectl, kubelogin, k9s, kubecolor, kubectx, kubens
-- k8s_dev: argorollouts, cilium, helm, flux, kustomize cli tools
+- k8s_dev: argorollouts, cilium, hubble, helm, flux, kustomize and trivy cli tools; autoselects k8s_base scope
 - k8s_ext: (WSL2 only) - minikube, k3d, kind local kubernetes tools; autoselects docker, k8s_base and k8s_dev scopes
-- nodejs: Node.js JavaScript runtime environment
+- nodejs: Node.js JavaScript runtime environment using V8 engine
 - pwsh: PowerShell Core and corresponding PS modules; autoselects shell scope
 - python: uv, prek, pip, venv
 - rice: btop, cmatrix, cowsay, fastfetch
-- shell: bat, eza, oh-my-posh, ripgrep, yq
+- shell: bat, eza, oh-my-posh, ripgrep, yq, copilot-cli
 - terraform: terraform, terrascan, tflint, tfswitch
 - zsh: zsh shell with plugins
 .PARAMETER Repos
@@ -47,11 +49,12 @@ wsl/wsl_install.ps1 -Distro 'Ubuntu' -FixNetwork
 # :set up WSL distro with specified installation scopes
 $Scope = @('python')
 $Scope = @('az', 'docker')
+$Scope = @('az', 'conda', 'docker', 'gcloud', 'k8s_base')  # with gcloud cli
 $Scope = @('az', 'docker', 'pwsh')
 $Scope = @('az', 'docker', 'k8s_base', 'pwsh', 'terraform')
 wsl/wsl_install.ps1 -Distro 'Ubuntu' -s $Scope
 # :set up WSL distro and clone specified GitHub repositories
-$Repos = @('procter-gamble/de-cf-wsl-setup-scripts')
+$Repos = @('szymonos/linux-setup-scripts')
 wsl/wsl_install.ps1 -Distro 'Ubuntu' -r $Repos
 # with the specified scope
 wsl/wsl_install.ps1 -Distro 'Ubuntu' -r $Repos -s $Scope
@@ -69,7 +72,8 @@ param (
     [Parameter(Mandatory, Position = 0)]
     [string]$Distro,
 
-    [ValidateScript({ $_.ForEach({ $_ -in @('az', 'conda', 'distrobox', 'docker', 'k8s_base', 'k8s_dev', 'k8s_ext', 'nodejs', 'oh_my_posh', 'pwsh', 'rice', 'shell', 'terraform', 'zsh') }) -notcontains $false })]
+    [Alias('s')]
+    [ValidateScript({ $_.ForEach({ $_ -in @('az', 'bun', 'conda', 'distrobox', 'docker', 'gcloud', 'k8s_base', 'k8s_dev', 'k8s_ext', 'nodejs', 'oh_my_posh', 'pwsh', 'python', 'rice', 'shell', 'terraform', 'zsh') }) -notcontains $false })]
     [string[]]$Scope,
 
     [ValidateScript({ $_.ForEach({ $_ -match '^[\w-]+/[\w-]+$' }) -notcontains $false })]

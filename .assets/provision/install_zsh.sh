@@ -2,6 +2,8 @@
 : '
 sudo .assets/provision/install_zsh.sh >/dev/null
 '
+set -euo pipefail
+
 if [ $EUID -ne 0 ]; then
   printf '\e[31;1mRun the script as root.\e[0m\n' >&2
   exit 1
@@ -42,6 +44,6 @@ debian | ubuntu)
   apt-get update >&2 && apt-get install -y $APP >&2 2>/dev/null
   ;;
 opensuse)
-  zypper in -y $APP >&2 2>/dev/null
+  zypper --non-interactive in -y $APP >&2 2>/dev/null
   ;;
 esac

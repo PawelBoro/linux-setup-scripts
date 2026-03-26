@@ -2,6 +2,8 @@
 : '
 sudo .assets/provision/install_gnome.sh
 '
+set -euo pipefail
+
 if [ $EUID -ne 0 ]; then
   printf '\e[31;1mRun the script as root.\e[0m\n' >&2
   exit 1
@@ -36,8 +38,8 @@ ubuntu)
   systemctl enable sddm
   ;;
 opensuse)
-  zypper install -t pattern kde kde_plasma
-  zypper install -y firefox
+  zypper --non-interactive install -t pattern kde kde_plasma
+  zypper --non-interactive install -y firefox
   systemctl set-default graphical.target
   ;;
 esac

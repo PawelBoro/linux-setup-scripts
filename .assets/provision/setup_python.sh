@@ -2,6 +2,8 @@
 : '
 sudo .assets/provision/setup_python.sh
 '
+set -euo pipefail
+
 if [ $EUID -ne 0 ]; then
   printf '\e[31;1mRun the script as root.\e[0m\n' >&2
   exit 1
@@ -45,7 +47,7 @@ debian | ubuntu)
   apt-get update && apt-get install -y python3-pip python3-virtualenv python3-venv
   ;;
 opensuse)
-  zypper in -y python3-pip python3-virtualenv
+  zypper --non-interactive in -y python3-pip python3-virtualenv
   ;;
 esac
 

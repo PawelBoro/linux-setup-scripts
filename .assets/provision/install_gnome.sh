@@ -2,6 +2,8 @@
 : '
 sudo .assets/provision/install_gnome.sh
 '
+set -euo pipefail
+
 if [ $EUID -ne 0 ]; then
   printf '\e[31;1mRun the script as root.\e[0m\n' >&2
   exit 1
@@ -35,8 +37,8 @@ ubuntu)
   systemctl set-default graphical.target
   ;;
 opensuse)
-  zypper in -y -t pattern gnome
-  zypper in -y firefox
+  zypper --non-interactive in -y -t pattern gnome
+  zypper --non-interactive in -y firefox
   systemctl set-default graphical.target
   ;;
 esac
