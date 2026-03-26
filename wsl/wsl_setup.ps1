@@ -51,7 +51,7 @@ Set network settings from the selected network interface in Windows.
 Skip updating current repository before running the setup.
 
 .EXAMPLE
-$Distro = 'Ubuntu'
+$Distro = 'FedoraLinux-43'
 # :set up WSL distro using default values
 wsl/wsl_setup.ps1 $Distro
 wsl/wsl_setup.ps1 $Distro -AddCertificate
@@ -65,7 +65,7 @@ $Scope = @('az', 'gcloud', 'k8s_ext', 'pwsh')
 wsl/wsl_setup.ps1 $Distro -s $Scope
 wsl/wsl_setup.ps1 $Distro -s $Scope -AddCertificate
 # :set up shell with the specified oh-my-posh theme
-$OmpTheme = 'nerd'
+$OmpTheme = 'pomp'
 wsl/wsl_setup.ps1 $Distro -s $Scope -o $OmpTheme
 wsl/wsl_setup.ps1 $Distro -s $Scope -o $OmpTheme -AddCertificate
 # :set up WSL distro and clone specified GitHub repositories
